@@ -1,13 +1,17 @@
 # Pharmacy Refill Risk Prediction
 
-Predicts whether a patient will pick up their next prescription refill on time,
-so a pharmacy can reach out to the ones who won't — before they run out of medication.
+Two models on one pharmacy dataset, served from one API:
 
-Built end to end: synthetic data → exploration → feature engineering → model → REST API.
+- **Model A — refill risk.** Will this patient pick up their next refill on time?
+  So the pharmacy can call the ones who won't, before they run out.
+- **Model B — demand forecast.** How many units of this drug will we dispense next week?
+  So the owner knows how much to order.
+
+Built end to end: synthetic data → exploration → feature engineering → models → REST API.
 
 ---
 
-## The problem
+## Model A — the problem
 
 A pharmacy dispenses a 30 day supply. A patient taking their medication properly comes
 back in about 30 days. A patient who comes back after 60 days spent a month with no medicine.
@@ -103,6 +107,47 @@ a missed refill costs — not on anything in the model.
 
 ---
 
+---
+
+## Model B — demand forecasting
+
+A different problem shape on the same data: predict a **number**, not a yes/no, with
+time as the main dimension.
+
+**Prediction question:** for each drug on each day, how many units will be dispensed
+over the **next 7 days**?
+
+Fill events are first collapsed to one row per drug per day, on a complete calendar —
+days with no dispensing become a real `0`, not a missing row. Features are lags (1, 7,
+14, 28 days) plus 7 and 28 day rolling averages, all shifted so the current day is
+excluded, plus day of week and month.
+
+| Model | MAE (units) | MAPE |
+|---|---:|---:|
+| "next week = last week" | 307 | 19.3% |
+| XGBoost regressor | **289** | 20.0% |
+
+Average real 7-day demand is 1,597 units.
+
+**The two metrics disagree, and that is the interesting part.** MAE counts raw units, so
+high-volume drugs dominate it — the model wins there. MAPE weights every drug equally, so
+the quiet drugs count as much as the busy ones, and there the model is marginally worse
+than repeating last week.
+
+For inventory ordering MAE is the right metric — you order in units, not percentages — so
+the model is the better choice for the job. Reporting only the flattering one would be
+the easy mistake.
+
+![forecast](reports/forecast.png)
+
+Blue is real demand, orange is the forecast, on 2026 data the model never saw. It tracks
+the level and deliberately does not chase the spikes: the day each patient walks in is
+random by construction, so a model that matched every spike would be memorising, not
+learning. The visible weakness is the first two weeks of January, where it carries
+December's level forward before adjusting — an argument for scheduled retraining.
+
+---
+
 ## Avoiding leakage
 
 Three deliberate decisions, each one a way this project could have silently produced a
@@ -119,6 +164,10 @@ past ones.
 dropped — 3,603 rows. Those patients still had time to return; the pipeline had marked
 them `0` because no next row existed. Keeping them would teach the model that recent
 prescriptions never get refilled.
+
+Model B has the same three in different clothing: a date split, `.shift(1)` before every
+rolling average so the current day never enters its own feature, and `dropna()` to remove
+the head of the series (no history yet) and the tail (no future yet).
 
 ---
 
@@ -155,6 +204,7 @@ python 02_explore.py               # writes reports/eda.png
 python 03_build_training_table.py  # writes data/training_table.csv
 python 04_train_model.py           # baseline + threshold analysis
 python 05_better_model.py          # XGBoost + feature importance
+python 06_forecast_demand.py       # demand forecast + reports/forecast.png
 
 uvicorn app:app --reload           # http://127.0.0.1:8000/docs
 ```
@@ -163,7 +213,7 @@ uvicorn app:app --reload           # http://127.0.0.1:8000/docs
 
 `GET /health` — liveness check.
 
-`POST /predict`
+`POST /predict` — Model A. Is this patient going to miss their refill?
 
 ```json
 {
@@ -187,6 +237,30 @@ The endpoint returns a risk band and an action, not a bare probability — a pha
 act on "pharmacist call", not on `0.178`. The band cut-offs come from the trade-off table
 above.
 
+`POST /forecast` — Model B. How much of this drug should I order?
+
+```json
+{
+  "drug_id": 1,
+  "as_of": "2026-06-01",
+  "daily_units": [180, 90, 180, 90, 540, 270, 360, 450, 180, 270,
+                  360, 450, 270, 270, 360, 450, 450, 90, 270, 720,
+                  540, 180, 90, 270, 360, 90, 270, 90, 0]
+}
+```
+
+```json
+{ "forecast_next_7_days": 2136, "suggested_order": 2350 }
+```
+
+*(actual demand that week was 1,800 units)*
+
+The caller sends 29 raw daily totals — today plus 28 days of history — not engineered
+features. Asking a pharmacy system to compute `roll28` correctly would push feature
+engineering across a network boundary, where it would drift out of sync with training
+the first time either side changed. The endpoint derives the features itself, from the
+same code path the model was trained on.
+
 The saved model bundle stores the trained model **and** the exact column order it was
 trained on. One-hot encoding a single incoming patient produces one drug column where the
 model expects twelve; `reindex` against that stored order fills the rest. Without it the
@@ -203,7 +277,8 @@ error.
 03_build_training_table.py   label + leak-free features -> training_table.csv
 04_train_model.py            logistic baseline, error analysis, threshold trade-off
 05_better_model.py           XGBoost, model comparison, feature importance
-app.py                       FastAPI service
+06_forecast_demand.py        Model B: daily series, lag features, demand forecast
+app.py                       FastAPI service - /predict and /forecast
 ```
 
 `data/`, `models/` and `reports/` are gitignored — every one of them is rebuilt by
