@@ -86,3 +86,59 @@ def predict(p: Patient):
         "risk": risk,
         "action": action,
     }
+
+
+# --- PIECE 3: the forecast endpoint - how much should I order? ------------
+
+from datetime import date
+
+forecast_bundle  = joblib.load("models/forecast_model.pkl")
+forecast_model   = forecast_bundle["model"]
+forecast_columns = forecast_bundle["columns"]
+
+
+class DrugHistory(BaseModel):
+    """
+    What the caller sends: one drug, today's date, and the last 29 daily
+    totals for that drug - oldest first, the LAST number being today.
+
+    Why 29 and not 9 separate features: the caller should not have to know
+    what lag_14 or roll28 mean. They send raw daily numbers, which any
+    pharmacy system already has, and we work the features out here.
+    """
+    drug_id:     int         = Field(ge=1, le=12)
+    as_of:       date
+    daily_units: list[float] = Field(min_length=29, max_length=29)
+
+
+@app.post("/forecast")
+def forecast(h: DrugHistory):
+    d = h.daily_units                      # d[-1] is today, d[0] is 28 days ago
+
+    # Build exactly the same features file 6 trained on.
+    row = {
+        "units":  d[-1],                   # today
+        "lag_1":  d[-2],                   # yesterday
+        "lag_7":  d[-8],                   # same day last week
+        "lag_14": d[-15],
+        "lag_28": d[-29],
+        "roll7":  sum(d[-8:-1]) / 7,       # the 7 days BEFORE today
+        "roll28": sum(d[-29:-1]) / 28,     # the 28 days BEFORE today
+        "dow":    h.as_of.weekday(),
+        "month":  h.as_of.month,
+    }
+    # One hot the drug: a True in its own column, False in the other eleven.
+    for i in range(1, 13):
+        row[f"drug_id_{i}"] = (i == h.drug_id)
+
+    X = pd.DataFrame([row]).reindex(columns=forecast_columns, fill_value=0).astype(float)
+
+    units = float(forecast_model.predict(X)[0])
+
+    return {
+        "drug_id": h.drug_id,
+        "as_of": str(h.as_of),
+        "forecast_next_7_days": round(units),
+        # A buffer, because running out is worse than holding a little extra.
+        "suggested_order": round(units * 1.1),
+    }

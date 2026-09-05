@@ -182,3 +182,16 @@ plt.savefig("reports/forecast.png", dpi=150)
 
 print()
 print("Chart saved -> reports/forecast.png")
+
+
+# --- PIECE 6: save it so the API can use it -------------------------------
+
+import joblib
+
+os.makedirs("models", exist_ok=True)
+
+# Save the model AND the column order, same as file 5.
+joblib.dump({"model": model, "columns": list(train.drop(columns=DROP).columns)},
+            "models/forecast_model.pkl")
+
+print("Saved  -> models/forecast_model.pkl")
