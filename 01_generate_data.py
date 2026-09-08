@@ -168,6 +168,60 @@ patients.to_csv("data/patients.csv", index=False)
 #    PrescReFill  = one row EVERY TIME the patient actually picks it up.
 #    The gap between those pickups is what the model will learn from.
 # ===========================================================================
+# ---------------------------------------------------------------------------
+# CONDITIONS - why patients take what they take
+#
+# Before, drugs were picked at random. That is not how medicine works.
+# A diabetic patient is very often ALSO on a blood pressure tablet and a
+# statin, because those three conditions travel together.
+#
+# Each condition has:  the drug that treats it,
+#                      and the drugs commonly prescribed alongside it,
+#                      with how often that happens.
+#
+# This is what lets the recommender in file 15 find anything at all.
+# ---------------------------------------------------------------------------
+DRUG_ROW = {name: i for i, (_, name, *_rest) in enumerate(DRUGS)}
+
+CONDITIONS = [
+    # name,               main drug options,                        also often prescribed
+    ("Diabetes",          ["Metformin"],                            {"Lisinopril": 0.55, "Atorvastatin": 0.50,
+                                                                     "Insulin Glarg": 0.30}),
+    ("High Blood Pressure", ["Lisinopril", "Amlodipine", "Losartan"], {"Atorvastatin": 0.45, "Simvastatin": 0.20}),
+    ("High Cholesterol",  ["Atorvastatin", "Simvastatin"],          {"Lisinopril": 0.30}),
+    ("Thyroid",           ["Levothyroxine"],                        {}),
+    ("Acid Reflux",       ["Omeprazole"],                           {}),
+    ("Nerve Pain",        ["Gabapentin"],                           {"Omeprazole": 0.25}),
+    ("Asthma",            ["Montelukast"],                          {}),
+    ("Depression",        ["Sertraline"],                           {"Omeprazole": 0.15}),
+]
+
+CONDITION_WEIGHTS = [0.20, 0.22, 0.14, 0.10, 0.10, 0.08, 0.08, 0.08]
+
+
+def choose_drugs_for_patient(rng):
+    """Pick this patient's medications the way a real patient ends up with them."""
+    chosen = set()
+
+    # Their main condition.
+    which = int(rng.choice(len(CONDITIONS), p=CONDITION_WEIGHTS))
+    _name, main_options, companions = CONDITIONS[which]
+    chosen.add(DRUG_ROW[str(rng.choice(main_options))])
+
+    # The drugs that usually come with it.
+    for drug_name, chance in companions.items():
+        if rng.random() < chance:
+            chosen.add(DRUG_ROW[drug_name])
+
+    # 25% of patients have a second, unrelated condition too.
+    if rng.random() < 0.25:
+        which2 = int(rng.choice(len(CONDITIONS), p=CONDITION_WEIGHTS))
+        _n2, main2, _c2 = CONDITIONS[which2]
+        chosen.add(DRUG_ROW[str(rng.choice(main2))])
+
+    return sorted(chosen)
+
+
 DAW_CODES    = [0, 0, 0, 0, 1, 2]                       # 0 = no product selection indicated
 RX_ORIGINS   = ["Electronic", "Written", "Telephone", "Fax"]
 
@@ -204,8 +258,7 @@ for patient_id in range(1, N_PATIENTS + 1):
     adherence = adherence_map[patient_id]
     insurance = insurances.loc[patients.loc[patient_id - 1, "insurance_id"] - 1]
 
-    n_drugs  = int(rng.integers(1, 4))                          # 1-3 medications per patient
-    drug_idx = rng.choice(len(drugs), size=n_drugs, replace=False)
+    drug_idx = choose_drugs_for_patient(rng)                    # based on their condition
 
     for i in drug_idx:
         drug = drugs.iloc[i]

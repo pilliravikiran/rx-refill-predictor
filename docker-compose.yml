@@ -1,0 +1,17 @@
+# Starts a PostgreSQL database in a container.
+# No installer, no setup wizard. One command up, one command down.
+services:
+  postgres:
+    image: postgres:16
+    container_name: rx-postgres
+    environment:
+      POSTGRES_USER: rx
+      POSTGRES_PASSWORD: rxpass
+      POSTGRES_DB: pharmacy
+    ports:
+      - "5432:5432"          # your machine's 5432 -> the container's 5432
+    volumes:
+      - rx_pgdata:/var/lib/postgresql/data   # keeps the data when the container stops
+
+volumes:
+  rx_pgdata:
