@@ -98,7 +98,7 @@ print("Chart saved -> reports/feature_importance.png")
 
 import joblib
 
-os.makedirs("models", exist_ok=True)
+os.makedirs("models/experiments", exist_ok=True)
 joblib.dump({"model": strong, "columns": list(X_train.columns)},
-            "models/refill_model_xgb.pkl")
-print("Saved  -> models/refill_model_xgb.pkl")
+            "models/experiments/xgboost_guessed.pkl")
+print("Saved  -> models/experiments/xgboost_guessed.pkl")

@@ -1,0 +1,13 @@
+# ONLY what the running API needs. Nothing else.
+#
+# Not here on purpose: mlflow, shap, matplotlib, seaborn.
+# Those are for training and analysis. Shipping them would triple the image
+# size and add code paths that can never run in production.
+fastapi
+uvicorn[standard]
+pydantic
+pandas
+numpy
+scikit-learn
+xgboost
+joblib

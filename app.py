@@ -24,7 +24,7 @@ app = FastAPI(title="Refill Risk API", version="1.0")
 
 # Load at start up, NOT inside the endpoint.
 # Loading takes time. Doing it per request would make every call slow.
-bundle  = joblib.load("models/refill_model_xgb.pkl")
+bundle  = joblib.load("models/refill_model.pkl")
 model   = bundle["model"]
 columns = bundle["columns"]        # the exact column order the model expects
 

@@ -1,0 +1,15 @@
+# Anything listed here is NOT copied into the image.
+# Keeps the image small and stops secrets leaking in.
+.venv/
+__pycache__/
+*.pyc
+.git/
+.github/
+mlruns/
+mlartifacts/
+data/
+reports/
+notebooks/
+models/experiments/
+.env
+*.md

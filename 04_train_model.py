@@ -176,12 +176,12 @@ print("Pick the cut-off from the business, not from the maths.")
 import joblib
 import os
 
-os.makedirs("models", exist_ok=True)
+os.makedirs("models/experiments", exist_ok=True)
 
 # We save the model AND the exact column list. If the columns are in a
 # different order later, the model gives nonsense without any error.
 joblib.dump({"model": model, "columns": list(X_train.columns)},
-            "models/refill_model.pkl")
+            "models/experiments/logistic_baseline.pkl")
 
 print()
-print("Saved -> models/refill_model.pkl")
+print("Saved -> models/experiments/logistic_baseline.pkl")
